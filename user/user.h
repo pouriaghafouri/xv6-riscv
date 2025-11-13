@@ -1,7 +1,6 @@
 #define SBRK_ERROR ((char *)-1)
 
 struct stat;
-struct context1;
 
 // system calls
 int fork(void);
