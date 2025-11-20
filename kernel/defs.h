@@ -176,6 +176,13 @@ void            plicinithart(void);
 int             plic_claim(void);
 void            plic_complete(int);
 
+// goldfish.c
+uint64          get_current_time(void);
+
+// rng.c
+void            rng_seed(uint64 seed);
+int             rand_int(void);
+
 // virtio_disk.c
 void            virtio_disk_init(void);
 void            virtio_disk_rw(struct buf *, int);
