@@ -145,6 +145,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  p->ticket = 1;
 
   return p;
 }
@@ -300,9 +301,25 @@ kfork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  np->ticket = p->ticket;
   release(&np->lock);
 
   return pid;
+}
+
+int
+setproctickets(int pid, int ticket)
+{
+  struct proc *p;
+  for(p = proc; p < &proc[NPROC]; p++) {
+    if (p->pid == pid) {
+      acquire(&p->lock);
+      p->ticket = ticket;
+      release(&p->lock);
+      return 0;
+    }
+  }
+  return -1;
 }
 
 // Pass p's abandoned children to init.
@@ -414,6 +431,20 @@ kwait(uint64 addr)
   }
 }
 
+int
+get_total_tickets(void)
+{
+  struct proc *p;
+  int total_tickets = 0;
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == RUNNABLE)
+      total_tickets += p->ticket;
+    release(&p->lock);
+  }
+  return total_tickets;
+}
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -426,6 +457,10 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  uint32 random;
+  int winner;
+  int tickets;
+  int total_tickets;
 
   c->proc = 0;
   for(;;){
@@ -437,27 +472,32 @@ scheduler(void)
     intr_on();
     intr_off();
 
-    int found = 0;
+    total_tickets = get_total_tickets();
+    if(total_tickets == 0) {
+      // nothing to run; stop running on this core until an interrupt.
+      asm volatile("wfi");
+      continue;
+    }
+    random = (uint32) rand_int();
+    winner = random % total_tickets;
+    tickets = 0;
+
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+        tickets += p->ticket;
+        if(tickets > winner) {
+          p->state = RUNNING;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+          c->proc = 0;
+          release(&p->lock);
+          break;
+        }
       }
       release(&p->lock);
     }
-    if(found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
-      asm volatile("wfi");
-    }
+
   }
 }
 

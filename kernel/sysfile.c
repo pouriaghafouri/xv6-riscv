@@ -503,3 +503,17 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_setprocshare(void)
+{
+    int pid, tickets;
+
+    argint(0, &pid);
+    argint(1, &tickets);
+
+    if(tickets <= 0)
+      return -1;
+
+    return setproctickets(pid, tickets);
+}
